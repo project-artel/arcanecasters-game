@@ -26,6 +26,20 @@ public class PlaygroundSubscriptionGuard implements ChannelInterceptor {
         if (destination == null) return message;
         if (destination.startsWith("/game/") && (destination.contains("*") || destination.contains("?")))
             throw new AccessDeniedException("Wildcard game subscriptions are not supported.");
+        if (destination.startsWith("/game/artel-qa-")) {
+            String[] parts = destination.split("/");
+            if (headers.getCommand() != StompCommand.SUBSCRIBE || parts.length != 5
+                    || !parts[3].equals("frameInfos")
+                    || !(headers.getUser() instanceof PrincipalDetails principal) || principal.memberId == null
+                    || !parts[4].equals(Long.toString(principal.memberId))) {
+                throw new AccessDeniedException("Invalid QA match subscription.");
+            }
+            var session = sessions.getObject().getSessionObject(parts[2]);
+            if (session == null || !session.isQaMatch() || session.getUserSide(principal.memberId) == null) {
+                throw new AccessDeniedException("QA match subscription denied.");
+            }
+            return message;
+        }
         if (!destination.contains("playground-")) return message;
         // No wildcard subscriptions or normal game inputs can reach a playground.
         String[] parts = destination.split("/");

@@ -331,8 +331,8 @@ public abstract class GameLoop implements Runnable {
         MmrService.RatingRef left = leftRatingAtStart != null ? leftRatingAtStart : mmrService.resolveRatingRef(leftId);
         MmrService.RatingRef right = rightRatingAtStart != null ? rightRatingAtStart : mmrService.resolveRatingRef(rightId);
 
-        boolean rated = sessionObject.getSessionType() == SessionType.PVP
-                || sessionObject.getSessionType() == SessionType.Practice;
+        boolean rated = !sessionObject.isQaMatch() && (sessionObject.getSessionType() == SessionType.PVP
+                || sessionObject.getSessionType() == SessionType.Practice);
         ResultMmrDto mmrDto = rated
                 ? MmrService.computeMatchResult(left, right, outcomeLeft,
                         sessionObject.getSessionType() == SessionType.PVP)
@@ -340,6 +340,11 @@ public abstract class GameLoop implements Runnable {
         // The result goes out before anything is written: the player sees the numbers that are
         // about to be stored, not the ones that have been.
         gameContext.getResultChecker().broadcastResult(mmrDto);
+
+        if (sessionObject.isQaMatch()) {
+            close();
+            return;
+        }
 
         persistAfterGameEnd(
                 () -> {
