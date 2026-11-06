@@ -82,10 +82,27 @@ public class SessionService {
     }
 
     public SessionObject createSession(SessionDto sessionDto) {
-        return createSessionObject(sessionDto);
+        rejectReservedQaId(sessionDto);
+        return createSessionObject(sessionDto, false);
+    }
+
+    public synchronized SessionObject createQaSession(long left, long right) {
+        for (SessionObject session : sessions.values()) {
+            if (!session.isQaMatch()) continue;
+            if (session.getLeftUserId() == left && session.getRightUserId() == right) return session;
+            if (session.getUserSide(left) != null
+                    || (right > 0 && session.getUserSide(right) != null)) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.CONFLICT, "QA account already has a match");
+            }
+        }
+        var type = right < 0 ? SessionType.Practice : SessionType.PVP;
+        return createSessionObject(new SessionDto("artel-qa-" + java.util.UUID.randomUUID(),
+                left, right, type, null), true);
     }
 
     public synchronized SessionCreationResult createSession(String attemptId, SessionDto sessionDto) {
+        rejectReservedQaId(sessionDto);
         if (attemptId == null || attemptId.isBlank()) {
             throw new IllegalArgumentException("attemptId must not be blank");
         }
@@ -105,10 +122,16 @@ public class SessionService {
             throw new IllegalArgumentException("sessionId already exists");
         }
 
-        SessionObject created = createSessionObject(sessionDto);
+        SessionObject created = createSessionObject(sessionDto, false);
         sessionIdsByAttemptId.put(attemptId, sessionDto.sessionId());
         return new SessionCreationResult(attemptId, sessionDto.sessionId(),
                 awaitSessionReady(sessionDto.sessionId()), created.getMap());
+    }
+
+    private static void rejectReservedQaId(SessionDto sessionDto) {
+        if (sessionDto.sessionId() != null && sessionDto.sessionId().startsWith("artel-qa-")) {
+            throw new IllegalArgumentException("Reserved QA session ID");
+        }
     }
 
     // isSessionActive() is only true once the loop thread is ticking, so the lobby would otherwise
@@ -128,8 +151,9 @@ public class SessionService {
         return started;
     }
 
-    private SessionObject createSessionObject(SessionDto sessionDto) {
+    private SessionObject createSessionObject(SessionDto sessionDto, boolean qaMatch) {
         SessionObject sessionObject = sessionObjectFactory.createSessionObject(sessionDto);
+        sessionObject.setQaMatch(qaMatch);
         GameLoop loop = gameLoopFactory.create(sessionObject.getSessionType());
         if (sessionDto.tickRate() != null) {
             loop.getGameContext().setTickRate(sessionDto.tickRate());
@@ -138,7 +162,7 @@ public class SessionService {
         sessionObject.setGameLoop(loop);
         loop.init(sessionObject, () -> onLoopTerminated(sessionObject));
 
-        if (sessionObject.getSessionType() != SessionType.Playground && !sessionObject.getSessionId().contains("debug")) {
+        if (!qaMatch && sessionObject.getSessionType() != SessionType.Playground && !sessionObject.getSessionId().contains("debug")) {
             statisticService.createBuilder(loop.getGameContext());
             gameSessionRecordService.recordStart(sessionObject);
         }
@@ -154,7 +178,7 @@ public class SessionService {
         } catch (RuntimeException | Error exception) {
             sessions.remove(sessionObject.getSessionId(), sessionObject);
             sessionObject.getPingChecker().close();
-            if (sessionObject.getSessionType() != SessionType.Playground) {
+            if (!qaMatch && sessionObject.getSessionType() != SessionType.Playground) {
                 gameSessionRecordService.recordEnd(sessionObject.getSessionId(),
                         GameSessionStatus.ABANDONED, "START_FAILED", null, null);
             }
@@ -185,7 +209,7 @@ public class SessionService {
         sessionObject.getPingChecker().close();
         submitSessionNumChange();
 
-        if (sessionObject.getSessionType() == SessionType.Playground) {
+        if (sessionObject.isQaMatch() || sessionObject.getSessionType() == SessionType.Playground) {
             sessionIdsByAttemptId.values().removeIf(sessionObject.getSessionId()::equals);
             return;
         }
@@ -278,7 +302,7 @@ public class SessionService {
         sessionObject.getPingChecker().close();
         submitSessionNumChange();
 
-        if (sessionObject.getSessionType() == SessionType.Playground) {
+        if (sessionObject.isQaMatch() || sessionObject.getSessionType() == SessionType.Playground) {
             var loop = sessionObject.getGameLoop();
             loop.close();
             loop.interruptLoopThread();
@@ -411,6 +435,7 @@ public class SessionService {
     // random UUID keys, so "the room near the top of the admin list" would mean nothing reproducible.
     public List<RoomInfoDto> getAllActiveSessionsInfo(String baseUrl) {
         return sessions.values().stream()
+                .filter(s -> !s.isQaMatch())
                 .filter(s -> s.getGameLoop() != null && s.getGameLoop().is_running())
                 .sorted(Comparator.comparing(SessionObject::getCreatedAt)
                         .thenComparing(SessionObject::getSessionId))

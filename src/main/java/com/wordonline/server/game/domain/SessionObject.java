@@ -46,6 +46,8 @@ public class SessionObject {
     private List<Long> rightDeckCardIds;
     private final PingChecker pingChecker;
     private final SessionType sessionType;
+    @Setter
+    private boolean qaMatch;
     private final Long scenarioId;
     // Decided before the session is created and read twice: by the creation response, and by the
     // loop when it spawns the terrain. Both must see this one value, so nothing re-rolls it.

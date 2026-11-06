@@ -92,6 +92,15 @@ public abstract class Mob extends Component implements Damageable, GaugeComponen
         gameObject.applyUpdate();
     }
 
+    public void setQaHealth(int health) {
+        if (!getGameContext().getSessionObject().isQaMatch() || gameObject.isDying()
+                || health < 1 || health > maxHp) {
+            throw new IllegalArgumentException("Invalid QA health");
+        }
+        hp = health;
+        gameObject.applyUpdate();
+    }
+
     public int drainHpAboveFraction(float floorFraction) {
         int floorHp = (int) Math.ceil(maxHp * Math.clamp(floorFraction, 0f, 1f));
         int drainedHp = Math.max(0, hp - floorHp);

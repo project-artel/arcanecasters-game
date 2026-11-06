@@ -16,6 +16,12 @@ public class PlayerHealthComponent extends Mob {
     }
 
     @Override
+    public void setQaHealth(int health) {
+        super.setQaHealth(health);
+        playerData.hp = hp;
+    }
+
+    @Override
     public void start() {}
 
     @Override

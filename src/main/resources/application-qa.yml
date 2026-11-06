@@ -1,0 +1,5 @@
+artel:
+  qa:
+    enabled: ${ARTEL_QA_ENABLED:false}
+    accounts: ${ARTEL_QA_ACCOUNTS:}
+    bot-id: ${ARTEL_QA_BOT_ID:0}
